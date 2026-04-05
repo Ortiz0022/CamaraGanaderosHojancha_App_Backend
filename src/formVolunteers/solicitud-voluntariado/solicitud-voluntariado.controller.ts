@@ -297,4 +297,11 @@ getSolicitudDocsLink(@Param('id', ParseIntPipe) id: number) {
     return this.solicitudService.remove(id);
   }
 
+
+  @Patch(':id/resync-documents')
+  @Roles('ADMIN')
+  resyncDocuments(@Param('id', ParseIntPipe) id: number) {
+    return this.solicitudService.resyncDocuments(id);
+  }
+
 }

@@ -336,7 +336,9 @@ async create(createDto: CreateSolicitudDto): Promise<Solicitud> {
     const solicitud = queryRunner.manager.create(Solicitud, {
       persona: personaAsociado,
       asociado,
-      fechaSolicitud: new Date(),
+      // ✅ Después
+      fechaSolicitud: this.getCostaRicaDateString(),
+      createdAt: this.getCostaRicaDateString(),
       estado: SolicitudStatus.PENDIENTE,
     })
 
@@ -382,6 +384,15 @@ private async sendCreationEmails(solicitud: Solicitud): Promise<void> {
       error,
     )
   }
+}
+
+private getCostaRicaDateString(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Costa_Rica',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date()); // Devuelve "2026-03-27"
 }
 
 private async validateOrThrow(

@@ -77,6 +77,7 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AuditBudgetModule } from './audit/auditBudget/audit-budget.module';
 import { AuditUsersModule } from './audit/auditUsers/audit-users.module';
+import { ManualsModule } from './manuals/manuals.module';
 
 @Module({
   imports: [
@@ -115,6 +116,7 @@ import { AuditUsersModule } from './audit/auditUsers/audit-users.module';
     FaqModule,
     AuthModule,
     ServicesInformativeModule,
+    ManualsModule,
     AboutUsModule,
     EventModule,
     UsersModule,

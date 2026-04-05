@@ -52,10 +52,12 @@ export class SolicitudVoluntariadoService {
      private emailService: EmailService,
      private readonly solicitudesPdfService: SolicitudesVoluntariadoPdfService,
   ) {}
-
+  
 async create(
   createSolicitudDto: CreateSolicitudVoluntariadoDto,
 ): Promise<SolicitudVoluntariado> {
+
+  
   const savedSolicitud = await this.dataSource.transaction(async (manager) => {
     await this.validateOrThrow(createSolicitudDto, manager)
 
@@ -171,7 +173,8 @@ async create(
       tipoSolicitante: createSolicitudDto.tipoSolicitante,
       voluntario,
       organizacion,
-      fechaSolicitud: new Date(),
+      fechaSolicitud: this.getCostaRicaDateString(),
+      createdAt: this.getCostaRicaDateString(),
       estado: SolicitudVoluntariadoStatus.PENDIENTE,
     })
 
@@ -185,6 +188,15 @@ async create(
   await this.sendCreationEmails(createdSolicitud)
 
   return createdSolicitud
+}
+
+private getCostaRicaDateString(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Costa_Rica',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date()); // Devuelve "2026-03-27"
 }
 
 private async sendCreationEmails(
@@ -586,7 +598,7 @@ async changeStatus(
 
   // Actualizar estado y fecha de resolución
   solicitud.estado = changeStatusDto.estado;
-  solicitud.fechaResolucion = new Date();
+  solicitud.fechaResolucion = this.getCostaRicaDateString() as any;
 
   if (changeStatusDto.motivo) {
     solicitud.motivo = changeStatusDto.motivo;
@@ -634,11 +646,9 @@ async changeStatus(
 
   await this.sendStatusChangeEmail(updatedSolicitud, changeStatusDto);
 
-  // Si se aprueba, copiar documentos a entidades (asíncrono)
+  // Si se aprueba, copiar documentos a entidades (awaited para garantizar que se guarden)
   if (changeStatusDto.estado === SolicitudVoluntariadoStatus.APROBADO) {
-    this.copyDocumentsToEntities(updatedSolicitud).catch((err) => {
-      console.error('Error copiando documentos:', err);
-    });
+    await this.copyDocumentsToEntities(updatedSolicitud);
   }
 
   // Devolver la solicitud actualizada con todas las relaciones
@@ -715,34 +725,34 @@ private async sendStatusChangeEmail(
     };
   }
 
-  // ✅ NUEVO: Método privado para copiar documentos al aprobar
+  // ✅ Método privado para copiar documentos al aprobar
   private async copyDocumentsToEntities(solicitud: SolicitudVoluntariado): Promise<void> {
     // Copiar documentos a VoluntarioIndividual (si existe)
     if (solicitud.voluntario) {
       if (solicitud.cvUrlTemp) {
         solicitud.voluntario.cvUrl = solicitud.cvUrlTemp;
       }
-      if (solicitud.cedulaUrlTemp && solicitud.voluntario.persona) {
-        solicitud.voluntario.persona.cedulaUrl = solicitud.cedulaUrlTemp;
-      }
       if (solicitud.cartaUrlTemp) {
         solicitud.voluntario.cartaUrl = solicitud.cartaUrlTemp;
       }
 
       await this.voluntarioRepository.save(solicitud.voluntario);
+
+      // Guardar cedulaUrl en Persona por separado (relación independiente)
+      if (solicitud.cedulaUrlTemp && solicitud.voluntario.persona) {
+        solicitud.voluntario.persona.cedulaUrl = solicitud.cedulaUrlTemp;
+        await this.personaRepository.save(solicitud.voluntario.persona);
+      }
     }
 
     // Copiar documentos a Organizacion (si existe)
     if (solicitud.organizacion) {
-      // documento legal (ahorita viene en cedulaUrlTemp)
       if (solicitud.cedulaUrlTemp) {
         solicitud.organizacion.documentoLegalUrl = solicitud.cedulaUrlTemp;
       }
-
       if (solicitud.cvUrlTemp) {
         solicitud.organizacion.cvUrl = solicitud.cvUrlTemp;
       }
-
       if (solicitud.cartaUrlTemp) {
         solicitud.organizacion.cartaUrl = solicitud.cartaUrlTemp;
       }
@@ -786,6 +796,17 @@ async generarPdfSolicitudVoluntarioIndividual(idSolicitud: number): Promise<Buff
   return this.voluntarioPdfService.generateVoluntarioIndividualPDF(voluntarioFull)
 }
 
+
+  private async findDropboxFolderByName(nombreCarpeta: string): Promise<string | null> {
+    const candidato = `/Solicitudes Voluntarios/${nombreCarpeta}`;
+    const exists = await this.dropboxService.folderExists(candidato);
+    return exists ? candidato : null;
+  }
+
+  private buildCarpetaName(nombre: string): string {
+    return nombre.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
+  }
+
   private extractFolderFromAnyDropboxPath(p?: string | null): string | null {
     if (!p) return null;
 
@@ -794,12 +815,26 @@ async generarPdfSolicitudVoluntarioIndividual(idSolicitud: number): Promise<Buff
 
     const parts = cleaned.split("/").filter(Boolean);
 
-    // ✅ Debe ser /Solicitudes Voluntarios/<nombre>/...
+    // Acepta cualquier capitalización/espaciado de la carpeta raíz
+    // Ej: "Solicitudes Voluntarios", "solicitudes voluntarios", etc.
     if (parts.length < 3) return null;
-    if (parts[0] !== "Solicitudes Voluntarios") return null;
 
+    const root = parts[0].toLowerCase().replace(/\s+/g, ' ');
+    if (root !== "solicitudes voluntarios") return null;
+
+    // Reconstruir con el casing original que está en el path
     return `/${parts[0]}/${parts[1]}`;
   }
+
+  private toLocalDateOnly(): Date {
+  const now = new Date();
+  // Extraer año/mes/día en zona local del servidor
+  const year  = now.getFullYear();
+  const month = now.getMonth();      // 0-indexed
+  const day   = now.getDate();
+  // Crear Date con esa fecha en UTC puro (sin desplazamiento de zona)
+  return new Date(Date.UTC(year, month, day));
+}
 
   // =========================================================
   // ✅ 1) LINK POR SOLICITUD (para VolunteerViewModal)
@@ -813,20 +848,7 @@ async getDocumentsLinkBySolicitud(idSolicitud: number): Promise<{ url: string; p
 
   if (!solicitud) throw new NotFoundException(`Solicitud ${idSolicitud} no encontrada`);
 
-  // ✅ 1) VALIDACIÓN DEFINITIVA: si no hay docs, NO devolver link (evita carpeta general)
-  const hasDocs =
-    (solicitud?.formData?.cv?.length ?? 0) > 0 ||
-    (solicitud?.formData?.cedula?.length ?? 0) > 0 ||
-    (solicitud?.formData?.carta?.length ?? 0) > 0 ||
-    !!solicitud?.cvUrlTemp ||
-    !!solicitud?.cedulaUrlTemp ||
-    !!solicitud?.cartaUrlTemp;
-
-  if (!hasDocs) {
-    throw new BadRequestException("Esta solicitud no tiene documentos adjuntos.");
-  }
-
-  // Tomamos cualquiera que exista (formData o temp)
+  // 1) Intentar con paths guardados en BD
   const anyPath =
     solicitud?.formData?.cv?.[0] ||
     solicitud?.formData?.cedula?.[0] ||
@@ -835,15 +857,34 @@ async getDocumentsLinkBySolicitud(idSolicitud: number): Promise<{ url: string; p
     solicitud?.cedulaUrlTemp ||
     solicitud?.cartaUrlTemp;
 
-  const folder = this.extractFolderFromAnyDropboxPath(anyPath);
+  let folder = this.extractFolderFromAnyDropboxPath(anyPath);
 
+  // 2) Fallback: buscar carpeta en Dropbox por nombre si BD no tiene paths
   if (!folder) {
-    throw new BadRequestException("No se pudo determinar la carpeta de documentos de esta solicitud.");
+    const isIndividual = solicitud.tipoSolicitante === "INDIVIDUAL";
+
+    if (isIndividual && solicitud.voluntario?.persona) {
+      const p = solicitud.voluntario.persona;
+      const porNombre = this.buildCarpetaName(
+        `${p.nombre ?? ''} ${p.apellido1 ?? ''}`.trim()
+      );
+      const porCedula = p.cedula ? this.buildCarpetaName(p.cedula) : null;
+
+      for (const nombre of [porNombre, porCedula].filter(Boolean) as string[]) {
+        folder = await this.findDropboxFolderByName(nombre);
+        if (folder) break;
+      }
+    } else if (!isIndividual && solicitud.organizacion?.nombre) {
+      const nombre = this.buildCarpetaName(solicitud.organizacion.nombre);
+      folder = await this.findDropboxFolderByName(nombre);
+    }
   }
 
-  // ⚠️ Ideal: cambiar este método a uno "strict" (sin fallback).
-  const url = await this.dropboxService.getOrCreateSharedLinkVolunteers(folder);
+  if (!folder) {
+    throw new BadRequestException("Esta solicitud no tiene documentos adjuntos.");
+  }
 
+  const url = await this.dropboxService.getOrCreateSharedLinkVolunteers(folder);
   return { url, path: folder };
 }
 
@@ -864,10 +905,21 @@ async getDocumentsLinkBySolicitud(idSolicitud: number): Promise<{ url: string; p
 
       if (!v) throw new NotFoundException(`Voluntario ${id} no encontrado`);
 
-      // en aprobado ya copiaste:
-      // v.cvUrl, v.cartaUrl y v.persona.cedulaUrl
       const anyPath = v.cvUrl || v.cartaUrl || v.persona?.cedulaUrl;
-      const folder = this.extractFolderFromAnyDropboxPath(anyPath);
+      let folder = this.extractFolderFromAnyDropboxPath(anyPath);
+
+      // Fallback: si no hay URL en BD, buscar carpeta en Dropbox por nombre o cédula
+      if (!folder && v.persona) {
+        const porNombre = this.buildCarpetaName(
+          `${v.persona.nombre ?? ''} ${v.persona.apellido1 ?? ''}`.trim()
+        );
+        const porCedula = v.persona.cedula ? this.buildCarpetaName(v.persona.cedula) : null;
+
+        for (const nombre of [porNombre, porCedula].filter(Boolean) as string[]) {
+          folder = await this.findDropboxFolderByName(nombre);
+          if (folder) break;
+        }
+      }
 
       if (!folder) throw new BadRequestException("Este voluntario no tiene documentos asociados para mostrar.");
 
@@ -882,14 +934,109 @@ async getDocumentsLinkBySolicitud(idSolicitud: number): Promise<{ url: string; p
 
     if (!org) throw new NotFoundException(`Organización ${id} no encontrada`);
 
-    // en aprobado copiaste:
-    // org.documentoLegalUrl (lo estás usando con cedulaUrlTemp)
-    const anyPath = org.documentoLegalUrl;
-    const folder = this.extractFolderFromAnyDropboxPath(anyPath);
+    const anyPath = org.documentoLegalUrl || org.cvUrl || org.cartaUrl;
+    let folder = this.extractFolderFromAnyDropboxPath(anyPath);
+
+    // Fallback: si no hay URL en BD, buscar carpeta en Dropbox por nombre de organización
+    if (!folder && org.nombre) {
+      const nombre = this.buildCarpetaName(org.nombre);
+      folder = await this.findDropboxFolderByName(nombre);
+    }
 
     if (!folder) throw new BadRequestException("Esta organización no tiene documentos asociados para mostrar.");
 
     const url = await this.dropboxService.getOrCreateSharedLinkVolunteers(folder);
     return { url, path: folder };
   }
+
+  // =========================================================
+  // RE-SYNC DOCUMENTOS: repara registros existentes en BD
+  // PATCH /solicitud-voluntariado/:id/resync-documents
+  // =========================================================
+  async resyncDocuments(idSolicitud: number): Promise<{
+    message: string;
+    syncedFields: string[];
+  }> {
+    const solicitud = await this.solicitudRepository.findOne({
+      where: { idSolicitudVoluntariado: idSolicitud },
+      relations: ["voluntario", "voluntario.persona", "organizacion"],
+    });
+
+    if (!solicitud) {
+      throw new NotFoundException(`Solicitud ${idSolicitud} no encontrada`);
+    }
+
+    if (solicitud.estado !== "APROBADO") {
+      throw new BadRequestException(
+        "Solo se pueden re-sincronizar documentos de solicitudes APROBADAS."
+      );
+    }
+
+    // Tomar cualquier path disponible (formData tiene precedencia sobre urlTemp)
+    const cvPath =
+      solicitud.formData?.cv?.[0] ?? solicitud.cvUrlTemp ?? null;
+    const cedulaPath =
+      solicitud.formData?.cedula?.[0] ?? solicitud.cedulaUrlTemp ?? null;
+    const cartaPath =
+      solicitud.formData?.carta?.[0] ?? solicitud.cartaUrlTemp ?? null;
+
+    if (!cvPath && !cedulaPath && !cartaPath) {
+      throw new BadRequestException(
+        "Esta solicitud no tiene ningún documento registrado para sincronizar."
+      );
+    }
+
+    const syncedFields: string[] = [];
+
+    // ── INDIVIDUAL ──────────────────────────────────────────
+    if (solicitud.voluntario) {
+      if (cvPath && !solicitud.voluntario.cvUrl) {
+        solicitud.voluntario.cvUrl = cvPath;
+        syncedFields.push("voluntario.cvUrl");
+      }
+      if (cartaPath && !solicitud.voluntario.cartaUrl) {
+        solicitud.voluntario.cartaUrl = cartaPath;
+        syncedFields.push("voluntario.cartaUrl");
+      }
+
+      await this.voluntarioRepository.save(solicitud.voluntario);
+
+      if (cedulaPath && solicitud.voluntario.persona && !solicitud.voluntario.persona.cedulaUrl) {
+        solicitud.voluntario.persona.cedulaUrl = cedulaPath;
+        await this.personaRepository.save(solicitud.voluntario.persona);
+        syncedFields.push("persona.cedulaUrl");
+      }
+    }
+
+    // ── ORGANIZACION ─────────────────────────────────────────
+    if (solicitud.organizacion) {
+      if (cedulaPath && !solicitud.organizacion.documentoLegalUrl) {
+        solicitud.organizacion.documentoLegalUrl = cedulaPath;
+        syncedFields.push("organizacion.documentoLegalUrl");
+      }
+      if (cvPath && !solicitud.organizacion.cvUrl) {
+        solicitud.organizacion.cvUrl = cvPath;
+        syncedFields.push("organizacion.cvUrl");
+      }
+      if (cartaPath && !solicitud.organizacion.cartaUrl) {
+        solicitud.organizacion.cartaUrl = cartaPath;
+        syncedFields.push("organizacion.cartaUrl");
+      }
+
+      await this.organizacionRepository.save(solicitud.organizacion);
+    }
+
+    if (syncedFields.length === 0) {
+      return {
+        message: "Los documentos ya estaban sincronizados. No se realizaron cambios.",
+        syncedFields: [],
+      };
+    }
+
+    return {
+      message: `Documentos sincronizados correctamente (${syncedFields.length} campo(s) actualizados).`,
+      syncedFields,
+    };
+  }
+
 }

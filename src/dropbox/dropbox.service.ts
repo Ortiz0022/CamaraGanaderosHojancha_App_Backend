@@ -116,16 +116,35 @@ export class DropboxService {
     this.ensureInitialized();
     
     try {
-      
       const response = await this.dbx.filesListFolder({ path });
-      
-      
       return response.result.entries;
     } catch (error: any) {
+      // 409 en Dropbox = path no encontrado o no es carpeta — relanzar tal cual
+      // para que el llamador pueda distinguir "no existe" de otros errores
+      if (error?.status === 409) {
+        throw error;
+      }
       console.error('[Dropbox] Error al listar carpeta:', error.message);
       throw new BadRequestException(
         `Error al listar carpeta de Dropbox: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Verifica si una carpeta existe en Dropbox sin lanzar excepción
+   * @returns true si existe, false si no
+   */
+  async folderExists(path: string): Promise<boolean> {
+    this.ensureInitialized();
+    try {
+      let p = path;
+      if (!p.startsWith('/')) p = `/${p}`;
+      p = p.replace(/\/+/g, '/');
+      await this.dbx.filesGetMetadata({ path: p });
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -158,14 +177,23 @@ export class DropboxService {
    */
   async downloadFile(path: string): Promise<Buffer> {
     this.ensureInitialized();
-    
+
     try {
-      
       const response = await this.dbx.filesDownload({ path });
-      
-      
-      // @ts-ignore - La librería de Dropbox tiene tipos incompletos
-      return response.result.fileBinary;
+
+      // @ts-ignore
+      const fileBinary = response.result.fileBinary;
+
+      if (Buffer.isBuffer(fileBinary)) {
+        return fileBinary;
+      }
+
+      if (fileBinary?.arrayBuffer) {
+        const arr = await fileBinary.arrayBuffer();
+        return Buffer.from(arr);
+      }
+
+      return Buffer.from(fileBinary);
     } catch (error: any) {
       console.error('[Dropbox] Error al descargar archivo:', error.message);
       throw new BadRequestException(
@@ -315,10 +343,14 @@ export class DropboxService {
         path: p,
         settings: {
           requested_visibility: { ".tag": "public" },
+          audience: { ".tag": "public" },
+          access: { ".tag": "viewer" },
         },
       });
 
-      return created.result.url;
+      const createdUrl = created.result?.url;
+      if (!createdUrl) throw new Error('No se pudo crear el shared link');
+      return createdUrl;
     } catch (error: any) {
       console.error("[Dropbox] Error getOrCreateSharedLink:", error?.message || error);
       throw new BadRequestException(`Error al generar link de Dropbox: ${error?.message || "Desconocido"}`);
