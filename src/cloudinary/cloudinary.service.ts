@@ -26,6 +26,16 @@ export class CloudinaryService {
     })
   }
 
+  getPublicId(filename: string, folder: string = 'gallery') {
+    if (!filename) return ''
+    const lastDot = filename.lastIndexOf('.')
+    const nameWithSpaces =
+      lastDot === -1 ? filename : filename.substring(0, lastDot)
+    // Reemplazamos todos los espacios por guiones bajos
+    const name = nameWithSpaces.replace(/\s+/g, '_')
+    return folder ? `${folder}/${name}` : name
+  }
+
   async getUsage() {
     const usage = await cloudinary.api.usage()
     return usage
@@ -136,6 +146,31 @@ async getGallery(params?: { maxResults?: number; nextCursor?: string }) {
     return cloudinary.uploader.destroy(publicId, { resource_type: 'video' })
   }
 
+  async findOne(publicId: string) {
+    try {
+      // Intentamos buscarlo como imagen
+      const result = await cloudinary.api.resource(publicId, {
+        resource_type: 'image',
+      })
+      return result
+    } catch (error: any) {
+      const httpCode = error?.http_code || error?.error?.http_code
+      if (httpCode !== 404) throw error
+    }
+
+    try {
+      // Intentamos como video
+      const result = await cloudinary.api.resource(publicId, {
+        resource_type: 'video',
+      })
+      return result
+    } catch (error: any) {
+      const httpCode = error?.http_code || error?.error?.http_code
+      if (httpCode === 404) return null
+      throw error
+    }
+  }
+
   async healthCheck() {
   const usage = await cloudinary.api.usage();
 
@@ -150,7 +185,7 @@ async getGallery(params?: { maxResults?: number; nextCursor?: string }) {
   };
 }
 
-async uploadBufferSafe(file: Express.Multer.File) {
+async uploadBufferSafe(file: Express.Multer.File, overwrite = false) {
   if (!file) {
     throw new Error('No file received');
   }
@@ -163,15 +198,19 @@ async uploadBufferSafe(file: Express.Multer.File) {
   const isVideo = mimetype.startsWith('video/');
   const resource_type: 'image' | 'video' = isVideo ? 'video' : 'image';
 
+  // Generamos el publicId explícitamente para evitar discrepancias
+  const public_id = this.getPublicId(file.originalname, ''); // Sin folder aquí porque pasamos folder aparte
+
   return new Promise((resolve, reject) => {
     cloudinary.uploader
       .upload_stream(
         {
           resource_type,
+          public_id,
           folder: 'gallery',
-          use_filename: true,
-          unique_filename: true,
-          overwrite: false,
+          use_filename: false, // Desactivamos esto para usar nuestro ID exacto
+          unique_filename: false,
+          overwrite: overwrite,
         },
         (error, result) => {
           if (error) {

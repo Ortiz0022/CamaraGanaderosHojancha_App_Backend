@@ -9,6 +9,8 @@ import {
   Post,
   BadRequestException,
   InternalServerErrorException,
+  NotFoundException,
+  ConflictException,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { v2 as cloudinary } from 'cloudinary'
@@ -34,17 +36,40 @@ getGallery(@Query('maxResults') maxResults?: string, @Query('nextCursor') nextCu
 
   // ✅ (si ya lo tenés, dejalo): /cloudinary/upload
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file')) // 👈 el campo debe llamarse "file"
-  async upload(@UploadedFile() file: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file'))
+  async upload(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('overwrite') overwrite?: string,
+  ) {
     if (!file) throw new BadRequestException('File is required')
 
-    // subimos buffer con upload_stream
+    const isOverwrite = overwrite === 'true'
+
+    if (!isOverwrite) {
+      // Por consistencia, si este no especifica folder, lo buscamos en raíz
+      const publicId = this.cloudinaryService.getPublicId(file.originalname, '')
+      const existing = await this.cloudinaryService.findOne(publicId)
+      if (existing) {
+        throw new ConflictException(
+          `Ya existe una imagen con el nombre "${file.originalname}" en la raíz`,
+        )
+      }
+    }
+
     const result = await new Promise<any>((resolve, reject) => {
       cloudinary.uploader
-        .upload_stream({ resource_type: 'image' }, (err, res) => {
-          if (err) return reject(err)
-          resolve(res)
-        })
+        .upload_stream(
+          {
+            resource_type: 'image',
+            use_filename: true,
+            unique_filename: false,
+            overwrite: isOverwrite,
+          },
+          (err, res) => {
+            if (err) return reject(err)
+            resolve(res)
+          },
+        )
         .end(file.buffer)
     })
 
@@ -54,13 +79,21 @@ getGallery(@Query('maxResults') maxResults?: string, @Query('nextCursor') nextCu
     }
   }
 
-  // ✅ NUEVO: /cloudinary/:publicId
+  // ✅ NUEVO: /cloudinary/:publicId (GET para validar existencia)
+  @Get(':publicId')
+  async getOne(@Param('publicId') publicId: string) {
+    const asset = await this.cloudinaryService.findOne(publicId)
+    if (!asset) throw new NotFoundException(`Asset ${publicId} not found`)
+    return asset
+  }
+
+  // ✅ NUEVO: /cloudinary/:publicId (DELETE)
   @Delete(':publicId')
   delete(@Param('publicId') publicId: string) {
     return this.cloudinaryService.delete(publicId)
   }
 
-    @Get('health')
+  @Get('health')
   async health() {
     return this.cloudinaryService.healthCheck()
   }
@@ -73,27 +106,35 @@ getGallery(@Query('maxResults') maxResults?: string, @Query('nextCursor') nextCu
 
   @Post('upload-safe')
   @UseInterceptors(FileInterceptor('file'))
-  async uploadSafe(@UploadedFile() file: Express.Multer.File) {
+  async uploadSafe(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('overwrite') overwrite?: string,
+  ) {
     if (!file) {
       throw new BadRequestException('File is required')
     }
 
+    const isOverwrite = overwrite === 'true'
+
     try {
-      console.log('[Cloudinary] upload-safe received:', {
-        originalname: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size,
-        hasBuffer: !!file.buffer,
-        bufferLength: file.buffer?.length ?? 0,
-      })
+      // Validación manual: NO PUEDEN SUBIRSE DOS IMÁGENES CON EL MISMO NOMBRE
+      if (!isOverwrite) {
+        const publicId = this.cloudinaryService.getPublicId(file.originalname, 'gallery')
+        const existing = await this.cloudinaryService.findOne(publicId)
+        if (existing) {
+          throw new ConflictException(
+            `Ya existe una imagen con el nombre "${file.originalname}" en la galería`,
+          )
+        }
+      }
 
-      const result = await this.cloudinaryService.uploadBufferSafe(file)
-
-      console.log('[Cloudinary] upload-safe success:', result)
-
+      const result = await this.cloudinaryService.uploadBufferSafe(
+        file,
+        isOverwrite,
+      )
       return result
     } catch (error: any) {
-      console.error('[Cloudinary] upload-safe error:', error)
+      if (error instanceof ConflictException) throw error
 
       throw new InternalServerErrorException({
         message: 'Cloudinary upload failed',
