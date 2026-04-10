@@ -57,7 +57,7 @@ export class OrganizacionService {
       .leftJoinAndSelect('organizacion.razonesSociales', 'razonesSociales')
       .leftJoinAndSelect('organizacion.areasInteres', 'areasInteres')
       .leftJoinAndSelect('organizacion.disponibilidades', 'disponibilidades')
-      .leftJoin('organizacion.solicitud', 'solicitud');
+      .leftJoinAndSelect('organizacion.solicitud', 'solicitud');
 
     // REGLA DE NEGOCIO: Solo mostrar organizaciones con solicitud APROBADA
     queryBuilder.andWhere('solicitud.estado = :estadoSolicitud', {

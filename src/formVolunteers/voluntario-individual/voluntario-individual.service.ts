@@ -83,7 +83,7 @@ export class VoluntarioIndividualService {
     .leftJoinAndSelect('voluntario.persona', 'persona')
     .leftJoinAndSelect('voluntario.areasInteres', 'areasInteres')
     .leftJoinAndSelect('voluntario.disponibilidades', 'disponibilidades')
-    .leftJoin('voluntario.solicitud', 'solicitud');
+    .leftJoinAndSelect('voluntario.solicitud', 'solicitud');
 
   queryBuilder.andWhere('solicitud.estado = :estadoSolicitud', {
     estadoSolicitud: 'APROBADO',
