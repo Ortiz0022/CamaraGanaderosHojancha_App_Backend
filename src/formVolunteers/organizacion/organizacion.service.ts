@@ -16,16 +16,15 @@ export class OrganizacionService {
   constructor(
     @InjectRepository(Organizacion)
     private organizacionRepository: Repository<Organizacion>,
-  ) {}
+  ) { }
 
-   async createInTransaction(
+  async createInTransaction(
     createOrganizacionDto: CreateOrganizacionDto,
     manager: EntityManager,
   ): Promise<Organizacion> {
     const repo = manager.getRepository(Organizacion);
 
     const cedJ = (createOrganizacionDto.cedulaJuridica ?? '').trim();
-    const email = (createOrganizacionDto.email ?? '').trim();
 
     // 1) Si existe por cédula jurídica, reusar
     const existente = await repo.findOne({ where: { cedulaJuridica: cedJ } });
@@ -34,15 +33,6 @@ export class OrganizacionService {
       return existente;
     }
 
-    // 2) Validar email institucional duplicado en ORGANIZACIONES
-    if (email) {
-      const emailDup = await repo.findOne({ where: { email } });
-      if (emailDup) {
-        throw new ConflictException(
-          `Ya existe una organización registrada con el email ${email}`,
-        );
-      }
-    }
 
     const organizacion = repo.create(createOrganizacionDto);
     return repo.save(organizacion);
@@ -165,21 +155,6 @@ export class OrganizacionService {
       }
     }
 
-    // Si se está actualizando el email, verificar que no exista
-    if (
-      updateOrganizacionDto.email &&
-      updateOrganizacionDto.email !== organizacion.email
-    ) {
-      const existingByEmail = await this.organizacionRepository.findOne({
-        where: { email: updateOrganizacionDto.email },
-      });
-
-      if (existingByEmail) {
-        throw new ConflictException(
-          `Ya existe una organización con el email ${updateOrganizacionDto.email}`,
-        );
-      }
-    }
 
     Object.assign(organizacion, updateOrganizacionDto);
     return this.organizacionRepository.save(organizacion);

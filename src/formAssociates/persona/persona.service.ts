@@ -16,7 +16,7 @@ export class PersonaService {
   constructor(
     @InjectRepository(Persona)
     private personaRepository: Repository<Persona>,
-  ) {}
+  ) { }
 
   // Método público (con validaciones completas)
   async create(createPersonaDto: CreatePersonaDto): Promise<Persona> {
@@ -31,57 +31,46 @@ export class PersonaService {
       );
     }
 
-    // Verificar si ya existe una persona con ese email
-    const existingByEmail = await this.personaRepository.findOne({
-      where: { email: createPersonaDto.email },
-    });
-
-    if (existingByEmail) {
-      throw new ConflictException(
-        `Ya existe una persona con el email ${createPersonaDto.email}`,
-      );
-    }
-
     const persona = this.personaRepository.create(createPersonaDto);
     return this.personaRepository.save(persona);
   }
 
   // ✅ Método transaccional (sin validaciones, usa EntityManager externo)
   async createInTransaction(
-  createPersonaDto: CreatePersonaDto,
-  manager: EntityManager,
-): Promise<Persona> {
-  const repo = manager.getRepository(Persona);
+    createPersonaDto: CreatePersonaDto,
+    manager: EntityManager,
+  ): Promise<Persona> {
+    const repo = manager.getRepository(Persona);
 
-  const cedula = (createPersonaDto.cedula ?? "").trim();
-  if (!cedula) {
-    throw new BadRequestException("La cédula es requerida");
+    const cedula = (createPersonaDto.cedula ?? "").trim();
+    if (!cedula) {
+      throw new BadRequestException("La cédula es requerida");
+    }
+
+    // 1) Buscar por cédula
+    const existente = await repo.findOne({ where: { cedula } });
+
+    if (existente) {
+      // 2) Autorellenar en backend (sin sobre-escribir lo existente)
+      //    Solo completa campos vacíos en BD con lo que venga en el DTO
+      const merged: Persona = repo.merge(existente, {
+        nombre: existente.nombre || createPersonaDto.nombre,
+        apellido1: existente.apellido1 || createPersonaDto.apellido1,
+        apellido2: existente.apellido2 || createPersonaDto.apellido2,
+        telefono: existente.telefono || createPersonaDto.telefono,
+        email: existente.email || createPersonaDto.email,
+        fechaNacimiento: existente.fechaNacimiento || createPersonaDto.fechaNacimiento,
+        direccion: existente.direccion || createPersonaDto.direccion,
+        cedulaUrl: existente.cedulaUrl || (createPersonaDto as any).cedulaUrl,
+      });
+
+      return repo.save(merged);
+    }
+
+    // 3) Si no existe, crear normal
+    const persona = repo.create(createPersonaDto);
+    return repo.save(persona);
   }
-
-  // 1) Buscar por cédula
-  const existente = await repo.findOne({ where: { cedula } });
-
-  if (existente) {
-    // 2) Autorellenar en backend (sin sobre-escribir lo existente)
-    //    Solo completa campos vacíos en BD con lo que venga en el DTO
-    const merged: Persona = repo.merge(existente, {
-      nombre: existente.nombre || createPersonaDto.nombre,
-      apellido1: existente.apellido1 || createPersonaDto.apellido1,
-      apellido2: existente.apellido2 || createPersonaDto.apellido2,
-      telefono: existente.telefono || createPersonaDto.telefono,
-      email: existente.email || createPersonaDto.email,
-      fechaNacimiento: existente.fechaNacimiento || createPersonaDto.fechaNacimiento,
-      direccion: existente.direccion || createPersonaDto.direccion,
-      cedulaUrl: existente.cedulaUrl || (createPersonaDto as any).cedulaUrl,
-    });
-
-    return repo.save(merged);
-  }
-
-  // 3) Si no existe, crear normal
-  const persona = repo.create(createPersonaDto);
-  return repo.save(persona);
-}
 
 
   async findByCedulaForForms(cedula: string): Promise<PersonaFormLookupDto> {
@@ -199,18 +188,6 @@ export class PersonaService {
   ): Promise<Persona> {
     const persona = await this.findOne(id);
 
-    // Si se está actualizando el email, verificar que no exista
-    if (updatePersonaDto.email && updatePersonaDto.email !== persona.email) {
-      const existingByEmail = await this.personaRepository.findOne({
-        where: { email: updatePersonaDto.email },
-      });
-
-      if (existingByEmail) {
-        throw new ConflictException(
-          `Ya existe una persona con el email ${updatePersonaDto.email}`,
-        );
-      }
-    }
 
     Object.assign(persona, updatePersonaDto);
     return this.personaRepository.save(persona);
