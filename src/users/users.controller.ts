@@ -22,7 +22,7 @@ import { ConfirmEmailChangeDto, RequestEmailChangeDto } from "./dto/EmailChange"
 
 @Controller("users")
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   // CONFIGURACIÓN (solo ADMIN)
 
@@ -39,7 +39,7 @@ export class UsersController {
   }
 
   @Post()
-  @Roles("ADMIN")
+  @Public()
   create(
     @Body() dto: CreateUserDto,
     @CurrentUser() user: CurrentUserData,
