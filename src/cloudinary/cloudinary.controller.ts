@@ -3,7 +3,6 @@ import {
   Get,
   Query,
   Delete,
-  Param,
   UseInterceptors,
   UploadedFile,
   Post,
@@ -18,23 +17,24 @@ import { CloudinaryService } from './cloudinary.service'
 
 @Controller('cloudinary')
 export class CloudinaryController {
-  constructor(private readonly cloudinaryService: CloudinaryService) {}
+  constructor(private readonly cloudinaryService: CloudinaryService) { }
 
   @Get('usage')
   usage() {
     return this.cloudinaryService.getUsage()
   }
 
-@Get('gallery')
-getGallery(@Query('maxResults') maxResults?: string, @Query('nextCursor') nextCursor?: string) {
-  return this.cloudinaryService.getGallery({
-    maxResults: maxResults ? Number(maxResults) : 50,
-    nextCursor,
-  });
-}
+  @Get('gallery')
+  getGallery(
+    @Query('maxResults') maxResults?: string,
+    @Query('nextCursor') nextCursor?: string,
+  ) {
+    return this.cloudinaryService.getGallery({
+      maxResults: maxResults ? Number(maxResults) : 50,
+      nextCursor,
+    })
+  }
 
-
-  // ✅ (si ya lo tenés, dejalo): /cloudinary/upload
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   async upload(
@@ -46,7 +46,6 @@ getGallery(@Query('maxResults') maxResults?: string, @Query('nextCursor') nextCu
     const isOverwrite = overwrite === 'true'
 
     if (!isOverwrite) {
-      // Por consistencia, si este no especifica folder, lo buscamos en raíz
       const publicId = this.cloudinaryService.getPublicId(file.originalname, '')
       const existing = await this.cloudinaryService.findOne(publicId)
       if (existing) {
@@ -79,17 +78,28 @@ getGallery(@Query('maxResults') maxResults?: string, @Query('nextCursor') nextCu
     }
   }
 
-  // ✅ NUEVO: /cloudinary/:publicId (GET para validar existencia)
-  @Get(':publicId')
-  async getOne(@Param('publicId') publicId: string) {
+  // ✅ CAMBIO: ahora por query param, no por :publicId
+  @Get('asset')
+  async getOne(@Query('publicId') publicId: string) {
+    if (!publicId) {
+      throw new BadRequestException('publicId is required')
+    }
+
     const asset = await this.cloudinaryService.findOne(publicId)
-    if (!asset) throw new NotFoundException(`Asset ${publicId} not found`)
+    if (!asset) {
+      throw new NotFoundException(`Asset ${publicId} not found`)
+    }
+
     return asset
   }
 
-  // ✅ NUEVO: /cloudinary/:publicId (DELETE)
-  @Delete(':publicId')
-  delete(@Param('publicId') publicId: string) {
+  // ✅ CAMBIO: ahora por query param, no por :publicId
+  @Delete('asset')
+  async delete(@Query('publicId') publicId: string) {
+    if (!publicId) {
+      throw new BadRequestException('publicId is required')
+    }
+
     return this.cloudinaryService.delete(publicId)
   }
 
@@ -117,9 +127,11 @@ getGallery(@Query('maxResults') maxResults?: string, @Query('nextCursor') nextCu
     const isOverwrite = overwrite === 'true'
 
     try {
-      // Validación manual: NO PUEDEN SUBIRSE DOS IMÁGENES CON EL MISMO NOMBRE
       if (!isOverwrite) {
-        const publicId = this.cloudinaryService.getPublicId(file.originalname, 'gallery')
+        const publicId = this.cloudinaryService.getPublicId(
+          file.originalname,
+          'gallery',
+        )
         const existing = await this.cloudinaryService.findOne(publicId)
         if (existing) {
           throw new ConflictException(
