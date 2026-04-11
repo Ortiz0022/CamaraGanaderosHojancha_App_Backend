@@ -27,7 +27,7 @@ import { PSpendSubType } from '../pSpendSubType/entities/p-spend-sub-type.entity
 import { PSpendType } from '../pSpendType/entities/p-spend-type.entity';
 import { LogoHelper } from '../reportUtils/logo-helper';
 
-type BaseFilters = { start?: string; end?: string; departmentId?: number; };
+type BaseFilters = { start?: string; end?: string; departmentId?: number; fiscalYearId?: number; };
 type IncomeFilters = BaseFilters & { incomeTypeId?: number; incomeSubTypeId?: number; };
 type SpendFilters  = BaseFilters & { spendTypeId?: number; spendSubTypeId?: number; };
 type PDFDoc = InstanceType<typeof PDFDocument>; 
@@ -580,15 +580,19 @@ addSummaryCardsCompare(
     .leftJoin('pst.pIncomeType', 'pt')
     .leftJoin('pt.department', 'd');
 
-    // ✅ AGREGAR FILTRADO POR FECHA
-    const start = this.parseISO(filters.start);
-    const end = this.parseISO(filters.end);
-    if (start && end) {
-      qb.andWhere('pi.date BETWEEN :from AND :to', { from: start, to: end });
-    } else if (start) {
-      qb.andWhere('pi.date >= :from', { from: start });
-    } else if (end) {
-      qb.andWhere('pi.date <= :to', { to: end });
+    // ✅ AGREGAR FILTRADO POR AÑO FISCAL (PROYECCIONES) O FECHA
+    if (filters.fiscalYearId) {
+      qb.andWhere('pi.fiscalYearId = :fyId', { fyId: filters.fiscalYearId });
+    } else {
+      const start = this.parseISO(filters.start);
+      const end = this.parseISO(filters.end);
+      if (start && end) {
+        qb.andWhere('pi.date BETWEEN :from AND :to', { from: start, to: end });
+      } else if (start) {
+        qb.andWhere('pi.date >= :from', { from: start });
+      } else if (end) {
+        qb.andWhere('pi.date <= :to', { to: end });
+      }
     }
 
     if (filters.departmentId) qb.andWhere('d.id = :dep', { dep: filters.departmentId });
@@ -618,17 +622,34 @@ addSummaryCardsCompare(
       this.projectedIncomeAgg(filters),
     ]);
 
-    const map = new Map<number, { name:string; real:number; proj:number }>();
-    real.forEach(r => map.set(r.subTypeId, { name: r.subTypeName, real: Number(r.realTotal||0), proj: 0 }));
-    proj.forEach(p => {
-      const prev = map.get(p.subTypeId);
-      if (prev) prev.proj = Number(p.projTotal||0);
-      else map.set(p.subTypeId, { name: p.subTypeName, real: 0, proj: Number(p.projTotal||0) });
+    const map = new Map<string, { id: number; real: number; proj: number }>();
+
+    real.forEach(r => {
+      const key = r.subTypeName.trim().toLowerCase();
+      map.set(key, { 
+        id: r.subTypeId,
+        real: Number(r.realTotal || 0), 
+        proj: 0 
+      });
     });
 
-    const rows = Array.from(map.entries()).map(([id, v]) => ({
-      incomeSubTypeId: id,
-      name: v.name,
+    proj.forEach(p => {
+      const key = p.subTypeName.trim().toLowerCase();
+      const prev = map.get(key);
+      if (prev) {
+        prev.proj = Number(p.projTotal || 0);
+      } else {
+        map.set(key, { 
+          id: p.subTypeId,
+          real: 0, 
+          proj: Number(p.projTotal || 0) 
+        });
+      }
+    });
+
+    const rows = Array.from(map.entries()).map(([name, v]) => ({
+      incomeSubTypeId: v.id,
+      name: name.charAt(0).toUpperCase() + name.slice(1),
       real: v.real,
       projected: v.proj,
       // *** clave: diferencia como PROYECTADO - REAL (así lo tenías) ***
@@ -682,15 +703,19 @@ private async projectedSpendAgg(filters: SpendFilters) {
     .leftJoin('psst.type', 'pst')          // ✅ Usar relación en lugar de join manual
     .leftJoin('pst.department', 'd');      // ✅ Usar relación en lugar de join manual
 
-  // ✅ Agregar filtros de fecha
-  const start = this.parseISO(filters.start);
-  const end = this.parseISO(filters.end);
-  if (start && end) {
-    qb.andWhere('ps.date BETWEEN :from AND :to', { from: start, to: end });
-  } else if (start) {
-    qb.andWhere('ps.date >= :from', { from: start });
-  } else if (end) {
-    qb.andWhere('ps.date <= :to', { to: end });
+  // ✅ Agregar filtros de fecha / año fiscal
+  if (filters.fiscalYearId) {
+    qb.andWhere('ps.fiscalYearId = :fyId', { fyId: filters.fiscalYearId });
+  } else {
+    const start = this.parseISO(filters.start);
+    const end = this.parseISO(filters.end);
+    if (start && end) {
+      qb.andWhere('ps.date BETWEEN :from AND :to', { from: start, to: end });
+    } else if (start) {
+      qb.andWhere('ps.date >= :from', { from: start });
+    } else if (end) {
+      qb.andWhere('ps.date <= :to', { to: end });
+    }
   }
 
   if (filters.departmentId) qb.andWhere('d.id = :dep', { dep: filters.departmentId });
@@ -789,15 +814,19 @@ async getPIncomeTable(filters: IncomeFilters) {
     .leftJoin('pist.pIncomeType', 'pit')     // relación hacia el tipo proyectado
     .leftJoin('pit.department', 'd');        // relación hacia departamento
 
-  // Filtros por fecha
-  const start = this.parseISO(filters.start);
-  const end = this.parseISO(filters.end);
-  if (start && end) {
-    qb.andWhere('pi.date BETWEEN :from AND :to', { from: start, to: end });
-  } else if (start) {
-    qb.andWhere('pi.date >= :from', { from: start });
-  } else if (end) {
-    qb.andWhere('pi.date <= :to', { to: end });
+  // Filtros por fecha / año fiscal
+  if (filters.fiscalYearId) {
+    qb.andWhere('pi.fiscalYearId = :fyId', { fyId: filters.fiscalYearId });
+  } else {
+    const start = this.parseISO(filters.start);
+    const end = this.parseISO(filters.end);
+    if (start && end) {
+      qb.andWhere('pi.date BETWEEN :from AND :to', { from: start, to: end });
+    } else if (start) {
+      qb.andWhere('pi.date >= :from', { from: start });
+    } else if (end) {
+      qb.andWhere('pi.date <= :to', { to: end });
+    }
   }
 
   // Otros filtros
@@ -847,15 +876,19 @@ async getPIncomeSummary(filters: IncomeFilters) {
     .leftJoin('pist.pIncomeType', 'pit')
     .leftJoin('pit.department', 'd');
 
-  const start = this.parseISO(filters.start);
-  const end = this.parseISO(filters.end);
+  if (filters.fiscalYearId) {
+    qb.andWhere('pi.fiscalYearId = :fyId', { fyId: filters.fiscalYearId });
+  } else {
+    const start = this.parseISO(filters.start);
+    const end = this.parseISO(filters.end);
 
-  if (start && end) {
-    qb.andWhere('pi.date BETWEEN :from AND :to', { from: start, to: end });
-  } else if (start) {
-    qb.andWhere('pi.date >= :from', { from: start });
-  } else if (end) {
-    qb.andWhere('pi.date <= :to', { to: end });
+    if (start && end) {
+      qb.andWhere('pi.date BETWEEN :from AND :to', { from: start, to: end });
+    } else if (start) {
+      qb.andWhere('pi.date >= :from', { from: start });
+    } else if (end) {
+      qb.andWhere('pi.date <= :to', { to: end });
+    }
   }
 
   if (filters.departmentId) qb.andWhere('d.id = :dep', { dep: filters.departmentId });
@@ -930,11 +963,15 @@ async getPSpendTable(filters: SpendFilters) {
     .leftJoin('pst.department', 'd');       // ✅ Usar relación
 
 
-  const start = this.parseISO(filters.start);
-  const end = this.parseISO(filters.end);
-  if (start && end) qb.andWhere('ps.date BETWEEN :from AND :to', { from: start, to: end });
-  else if (start) qb.andWhere('ps.date >= :from', { from: start });
-  else if (end) qb.andWhere('ps.date <= :to', { to: end });
+  if (filters.fiscalYearId) {
+    qb.andWhere('ps.fiscalYearId = :fyId', { fyId: filters.fiscalYearId });
+  } else {
+    const start = this.parseISO(filters.start);
+    const end = this.parseISO(filters.end);
+    if (start && end) qb.andWhere('ps.date BETWEEN :from AND :to', { from: start, to: end });
+    else if (start) qb.andWhere('ps.date >= :from', { from: start });
+    else if (end) qb.andWhere('ps.date <= :to', { to: end });
+  }
 
   if (filters.departmentId) qb.andWhere('d.id = :dep', { dep: filters.departmentId });
   if (filters.spendTypeId) qb.andWhere('pst.id = :t', { t: filters.spendTypeId });
@@ -963,11 +1000,15 @@ async getPSpendSummary(filters: SpendFilters) {
     .leftJoin('psst.type', 'pst')           // ✅ Usar relación
     .leftJoin('pst.department', 'd');       // ✅ Usar relación
 
-  const start = this.parseISO(filters.start);
-  const end = this.parseISO(filters.end);
-  if (start && end) qb.andWhere('ps.date BETWEEN :from AND :to', { from: start, to: end });
-  else if (start) qb.andWhere('ps.date >= :from', { from: start });
-  else if (end) qb.andWhere('ps.date <= :to', { to: end });
+  if (filters.fiscalYearId) {
+    qb.andWhere('ps.fiscalYearId = :fyId', { fyId: filters.fiscalYearId });
+  } else {
+    const start = this.parseISO(filters.start);
+    const end = this.parseISO(filters.end);
+    if (start && end) qb.andWhere('ps.date BETWEEN :from AND :to', { from: start, to: end });
+    else if (start) qb.andWhere('ps.date >= :from', { from: start });
+    else if (end) qb.andWhere('ps.date <= :to', { to: end });
+  }
 
   if (filters.departmentId) qb.andWhere('d.id = :dep', { dep: filters.departmentId });
   if (filters.spendTypeId) qb.andWhere('pst.id = :t', { t: filters.spendTypeId });

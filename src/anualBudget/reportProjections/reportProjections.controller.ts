@@ -17,12 +17,14 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('incomeTypeId') incomeTypeId?: string,
     @Query('incomeSubTypeId') incomeSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
   ) {
     return this.svc.compareIncome({
       start, end,
       departmentId: departmentId ? Number(departmentId) : undefined,
       incomeTypeId: incomeTypeId ? Number(incomeTypeId) : undefined,
       incomeSubTypeId: incomeSubTypeId ? Number(incomeSubTypeId) : undefined,
+      fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
     });
   }
 
@@ -33,12 +35,14 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('spendTypeId') spendTypeId?: string,
     @Query('spendSubTypeId') spendSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
   ) {
     return this.svc.compareSpend({
       start, end,
       departmentId: departmentId ? Number(departmentId) : undefined,
       spendTypeId: spendTypeId ? Number(spendTypeId) : undefined,
       spendSubTypeId: spendSubTypeId ? Number(spendSubTypeId) : undefined,
+      fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
     });
   }
 
@@ -51,6 +55,7 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('incomeTypeId') incomeTypeId?: string,
     @Query('incomeSubTypeId') incomeSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
     @Query('preview') preview?: string,
     @Res() res?: Response,
   ) {
@@ -60,6 +65,7 @@ export class ReportProjectionsController {
         departmentId: departmentId ? Number(departmentId) : undefined,
         incomeTypeId: incomeTypeId ? Number(incomeTypeId) : undefined,
         incomeSubTypeId: incomeSubTypeId ? Number(incomeSubTypeId) : undefined,
+        fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
       };
       const pdf = await this.svc.generateCompareIncomePDF(filters);
       const filename = `reporte-comparativo-ingresos-${new Date().toISOString().slice(0,10)}.pdf`;
@@ -84,6 +90,7 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('spendTypeId') spendTypeId?: string,
     @Query('spendSubTypeId') spendSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
     @Query('preview') preview?: string,
     @Res() res?: Response,
   ) {
@@ -93,6 +100,7 @@ export class ReportProjectionsController {
         departmentId: departmentId ? Number(departmentId) : undefined,
         spendTypeId: spendTypeId ? Number(spendTypeId) : undefined,
         spendSubTypeId: spendSubTypeId ? Number(spendSubTypeId) : undefined,
+        fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
       };
       const pdf = await this.svc.generateCompareSpendPDF(filters);
       const filename = `reporte-comparativo-egresos-${new Date().toISOString().slice(0,10)}.pdf`;
@@ -118,6 +126,7 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('incomeTypeId') incomeTypeId?: string,
     @Query('incomeSubTypeId') incomeSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
     @Query('preview') preview?: string,
     @Res() res?: Response,
   ) {
@@ -127,6 +136,7 @@ export class ReportProjectionsController {
         departmentId: departmentId ? Number(departmentId) : undefined,
         incomeTypeId: incomeTypeId ? Number(incomeTypeId) : undefined,
         incomeSubTypeId: incomeSubTypeId ? Number(incomeSubTypeId) : undefined,
+        fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
       };
       const pdf = await this.svc.generatePIncomePDF(filters);
       const filename = `reporte-pincome-${new Date().toISOString().slice(0,10)}.pdf`;
@@ -151,6 +161,7 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('spendTypeId') spendTypeId?: string,
     @Query('spendSubTypeId') spendSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
     @Query('preview') preview?: string,
     @Res() res?: Response,
   ) {
@@ -160,6 +171,7 @@ export class ReportProjectionsController {
         departmentId: departmentId ? Number(departmentId) : undefined,
         spendTypeId: spendTypeId ? Number(spendTypeId) : undefined,
         spendSubTypeId: spendSubTypeId ? Number(spendSubTypeId) : undefined,
+        fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
       };
       const pdf = await this.svc.generatePSpendPDF(filters);
       const filename = `reporte-pspend-${new Date().toISOString().slice(0,10)}.pdf`;
@@ -185,6 +197,7 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('incomeTypeId') incomeTypeId?: string,
     @Query('incomeSubTypeId') incomeSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
     @Res() res?: Response,
   ) {
     try {
@@ -193,6 +206,7 @@ export class ReportProjectionsController {
         departmentId: departmentId ? Number(departmentId) : undefined,
         incomeTypeId: incomeTypeId ? Number(incomeTypeId) : undefined,
         incomeSubTypeId: incomeSubTypeId ? Number(incomeSubTypeId) : undefined,
+        fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
       };
       const excel = await this.svc.generateCompareIncomeExcel(filters);
       const filename = `reporte-comparativo-ingresos-${new Date().toISOString().slice(0,10)}.xlsx`;
@@ -215,6 +229,7 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('spendTypeId') spendTypeId?: string,
     @Query('spendSubTypeId') spendSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
     @Res() res?: Response,
   ) {
     try {
@@ -223,6 +238,7 @@ export class ReportProjectionsController {
         departmentId: departmentId ? Number(departmentId) : undefined,
         spendTypeId: spendTypeId ? Number(spendTypeId) : undefined,
         spendSubTypeId: spendSubTypeId ? Number(spendSubTypeId) : undefined,
+        fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
       };
       const excel = await this.svc.generateCompareSpendExcel(filters);
       const filename = `reporte-comparativo-egresos-${new Date().toISOString().slice(0,10)}.xlsx`;
@@ -246,6 +262,7 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('incomeTypeId') incomeTypeId?: string,
     @Query('incomeSubTypeId') incomeSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
     @Res() res?: Response,
   ) {
     try {
@@ -254,6 +271,7 @@ export class ReportProjectionsController {
         departmentId: departmentId ? Number(departmentId) : undefined,
         incomeTypeId: incomeTypeId ? Number(incomeTypeId) : undefined,
         incomeSubTypeId: incomeSubTypeId ? Number(incomeSubTypeId) : undefined,
+        fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
       };
       const excel = await this.svc.generatePIncomeExcel(filters);
       const filename = `reporte-pincome-${new Date().toISOString().slice(0,10)}.xlsx`;
@@ -276,6 +294,7 @@ export class ReportProjectionsController {
     @Query('departmentId') departmentId?: string,
     @Query('spendTypeId') spendTypeId?: string,
     @Query('spendSubTypeId') spendSubTypeId?: string,
+    @Query('fiscalYearId') fiscalYearId?: string,
     @Res() res?: Response,
   ) {
     try {
@@ -284,6 +303,7 @@ export class ReportProjectionsController {
         departmentId: departmentId ? Number(departmentId) : undefined,
         spendTypeId: spendTypeId ? Number(spendTypeId) : undefined,
         spendSubTypeId: spendSubTypeId ? Number(spendSubTypeId) : undefined,
+        fiscalYearId: fiscalYearId ? Number(fiscalYearId) : undefined,
       };
       const excel = await this.svc.generatePSpendExcel(filters);
       const filename = `reporte-pspend-${new Date().toISOString().slice(0,10)}.xlsx`;
